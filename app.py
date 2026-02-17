@@ -318,8 +318,17 @@ def fetch_image_bytes(url: str) -> Optional[bytes]:
         return None
 
 def show_image(card: dict):
+    """
+    Display a player headshot using best available source.
+    Includes a debug line to confirm whether image bytes are being fetched.
+    """
+
     img = best_headshot_bytes(card)
 
+    # DEBUG: show whether we actually received image bytes
+    st.caption(f"Image bytes received: {0 if img is None else len(img)}")
+
+    # If no usable image data, fail gracefully
     if not isinstance(img, (bytes, bytearray)) or len(img) < 200:
         st.caption("No headshot available (blocked or not found).")
         return
@@ -328,6 +337,7 @@ def show_image(card: dict):
         st.image(io.BytesIO(bytes(img)), use_container_width=True)
     except Exception:
         st.caption("Headshot failed to render.")
+
 
 
 def init_state():
