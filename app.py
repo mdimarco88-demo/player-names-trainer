@@ -211,14 +211,44 @@ def tts_button(text: str, label: str = "🔊 Speak"):
     """
     st.components.v1.html(html, height=50)
 
+@st.cache_data(ttl=60 * 60)
+def fetch_image_bytes(url: str) -> Optional[bytes]:
+    """
+    Fetch image server-side (Streamlit Cloud) so the browser is not hotlinking the CDN directly.
+    This bypasses many headshot/CDN blocking issues.
+    """
+    if not url:
+        return None
+
+    headers = {
+        # Some CDNs require a realistic UA and/or referer
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        "Referer": "https://www.espn.com/",
+        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    }
+
+    try:
+        r = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+        if r.status_code != 200:
+            return None
+        ctype = (r.headers.get("Content-Type") or "").lower()
+        if "image" not in ctype:
+            return None
+        return r.content
+    except Exception:
+        return None
+
 def show_image(url: Optional[str]):
     if not url:
         st.caption("No headshot available for this player.")
         return
-    try:
-        st.image(url, use_container_width=True)
-    except Exception:
-        st.caption("Headshot failed to load (URL may be blocked).")
+
+    img = fetch_image_bytes(url)
+    if img:
+        st.image(img, use_container_width=True)
+    else:
+        st.caption("Headshot failed to load (blocked or unavailable).")
+
 
 def init_state():
     st.session_state.setdefault("mode", "Quiz")
