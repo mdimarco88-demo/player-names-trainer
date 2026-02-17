@@ -3,6 +3,8 @@ import os
 import random
 import time
 import io
+import urllib.parse
+import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -120,6 +122,86 @@ def fetch_roster(league: str, team_id: str) -> List[dict]:
     # clean
     players = [p for p in players if p["name"] and p["team"] and p["position"]]
     return players
+
+@st.cache_data(ttl=7 * 24 * 60 * 60)  # cache 7 days
+def wikipedia_thumbnail_url(player_name: str, league: str) -> Optional[str]:
+    """
+    Try to get a usable headshot-style thumbnail from Wikipedia.
+    This avoids hotlink/CDN blocking issues from ESPN images.
+    """
+    if not player_name:
+        return None
+
+    # Add a tiny bit of disambiguation to improve hit rate
+    query = player_name
+    if league.lower() == "nfl":
+        query += " NFL"
+    elif league.lower() == "nba":
+        query += " NBA"
+
+    try:
+        # 1) Search for the best matching title
+        search_url = "https://en.wikipedia.org/w/api.php"
+        params = {
+            "action": "query",
+            "list": "search",
+            "srsearch": query,
+            "format": "json",
+            "srlimit": 1,
+        }
+        r = requests.get(search_url, params=params, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        results = (data.get("query", {}) or {}).get("search", [])
+        if not results:
+            return None
+
+        title = results[0].get("title")
+        if not title:
+            return None
+
+        # 2) Get the REST summary (includes thumbnail if available)
+        encoded_title = urllib.parse.quote(title.replace(" ", "_"))
+        summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{encoded_title}"
+        r2 = requests.get(summary_url, timeout=20)
+        if r2.status_code != 200:
+            return None
+        summary = r2.json()
+
+        thumb = (summary.get("thumbnail") or {}).get("source")
+        if thumb:
+            return thumb
+
+        # Sometimes Wikipedia uses "originalimage" instead
+        orig = (summary.get("originalimage") or {}).get("source")
+        return orig
+
+    except Exception:
+        return None
+
+
+def best_headshot_bytes(card: dict) -> Optional[bytes]:
+    """
+    Fallback chain:
+      1) ESPN headshot url -> bytes (if not blocked)
+      2) Wikipedia thumbnail url -> bytes
+    """
+    # 1) Try ESPN headshot
+    espn_url = card.get("image_url")
+    if espn_url:
+        img = fetch_image_bytes(espn_url)
+        if isinstance(img, (bytes, bytearray)) and len(img) > 200:
+            return bytes(img)
+
+    # 2) Try Wikipedia
+    wiki_url = wikipedia_thumbnail_url(card.get("name", ""), card.get("league", ""))
+    if wiki_url:
+        img2 = fetch_image_bytes(wiki_url)
+        if isinstance(img2, (bytes, bytearray)) and len(img2) > 200:
+            return bytes(img2)
+
+    return None
+
 
 # ---------------------------
 # Training logic
@@ -239,16 +321,11 @@ def fetch_image_bytes(url: str) -> Optional[bytes]:
     except Exception:
         return None
 
-def show_image(url: Optional[str]):
-    if not url:
-        st.caption("No headshot available for this player.")
-        return
+def show_image(card: dict):
+    img = best_headshot_bytes(card)
 
-    img = fetch_image_bytes(url)
-
-    # Defensive: only accept real bytes
-    if not isinstance(img, (bytes, bytearray)) or len(img) < 100:
-        st.caption("Headshot failed to load (blocked or unavailable).")
+    if not isinstance(img, (bytes, bytearray)) or len(img) < 200:
+        st.caption("No headshot available (blocked or not found).")
         return
 
     try:
@@ -393,7 +470,8 @@ left, right = st.columns([1, 1], gap="large")
 
 with left:
     st.subheader("Card")
-    show_image(card.get("image_url"))
+    show_image(card)
+
 
     if st.session_state.mode != "Flash":
         if st.session_state.reveal:
