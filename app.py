@@ -227,6 +227,18 @@ def init_state():
     st.session_state.setdefault("reveal", False)
     st.session_state.setdefault("last_result", None)
 
+    # NEW: input-clearing mechanism
+    st.session_state.setdefault("clear_inputs", False)
+
+    # If a previous action requested clearing, do it BEFORE widgets render
+    if st.session_state.clear_inputs:
+        st.session_state["quiz_team"] = ""
+        st.session_state["quiz_pos"] = ""
+        st.session_state["audio_team"] = ""
+        st.session_state["audio_pos"] = ""
+        st.session_state.clear_inputs = False
+
+
 def set_next_card(pool: List[dict], user_stats: Dict[str, Dict]):
     st.session_state.current_card = pick_weighted_card(pool, user_stats)
     st.session_state.card_start_ts = now_ts()
@@ -391,10 +403,10 @@ with right:
             save_progress(progress)
 
         if c3.button("Next"):
-            st.session_state.audio_team = ""
-            st.session_state.audio_pos = ""
-            set_next_card(pool, user_stats)
-            st.rerun()
+    st.session_state.clear_inputs = True
+    set_next_card(pool, user_stats)
+    st.rerun()
+
 
     else:
         st.write("Look at the face and answer **team + position** in under 2 seconds.")
@@ -414,10 +426,10 @@ with right:
             save_progress(progress)
 
         if c3.button("Next"):
-            st.session_state.quiz_team = ""
-            st.session_state.quiz_pos = ""
-            set_next_card(pool, user_stats)
-            st.rerun()
+    st.session_state.clear_inputs = True
+    set_next_card(pool, user_stats)
+    st.rerun()
+
 
 # Feedback
 if st.session_state.last_result:
