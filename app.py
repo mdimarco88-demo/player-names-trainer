@@ -308,7 +308,7 @@ def fetch_image_bytes(url: str) -> Optional[bytes]:
         # Some CDNs require a realistic UA and/or referer
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
         "Referer": "https://www.espn.com/",
-        "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        "Accept": "image/jpeg,image/png,image/webp,*/*;q=0.8",
     }
 
     try:
