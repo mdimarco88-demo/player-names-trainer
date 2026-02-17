@@ -10,6 +10,8 @@ from typing import Dict, List, Optional
 
 import requests
 import streamlit as st
+from PIL import Image
+
 
 APP_TITLE = "PAC Roster Trainer (NFL + NBA)"
 PROGRESS_PATH = "storage/progress.json"
@@ -319,25 +321,32 @@ def fetch_image_bytes(url: str) -> Optional[bytes]:
 
 def show_image(card: dict):
     """
-    Display a player headshot using best available source.
-    Includes a debug line to confirm whether image bytes are being fetched.
+    Fetch image bytes, decode with Pillow, convert to PNG, then render.
+    This fixes cases where the source returns AVIF/odd formats that Streamlit can't display directly.
     """
-
     img = best_headshot_bytes(card)
 
-    # DEBUG: show whether we actually received image bytes
+    # DEBUG (keep for now)
     st.caption(f"Image bytes received: {0 if img is None else len(img)}")
 
-    # If no usable image data, fail gracefully
     if not isinstance(img, (bytes, bytearray)) or len(img) < 200:
         st.caption("No headshot available (blocked or not found).")
         return
 
     try:
-        st.image(io.BytesIO(bytes(img)), use_container_width=True)
-    except Exception:
-        st.caption("Headshot failed to render.")
+        # Decode whatever format we got
+        im = Image.open(io.BytesIO(bytes(img)))
+        im = im.convert("RGB")  # normalize
 
+        # Convert to PNG in-memory
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+        buf.seek(0)
+
+        st.image(buf, use_container_width=True)
+
+    except Exception:
+        st.caption("Headshot failed to render (decode/convert error).")
 
 
 def init_state():
