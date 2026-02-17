@@ -2,6 +2,7 @@ import json
 import os
 import random
 import time
+import io
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -244,10 +245,16 @@ def show_image(url: Optional[str]):
         return
 
     img = fetch_image_bytes(url)
-    if img:
-        st.image(img, use_container_width=True)
-    else:
+
+    # Defensive: only accept real bytes
+    if not isinstance(img, (bytes, bytearray)) or len(img) < 100:
         st.caption("Headshot failed to load (blocked or unavailable).")
+        return
+
+    try:
+        st.image(io.BytesIO(bytes(img)), use_container_width=True)
+    except Exception:
+        st.caption("Headshot failed to render.")
 
 
 def init_state():
