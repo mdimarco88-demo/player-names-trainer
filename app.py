@@ -403,9 +403,9 @@ with right:
             save_progress(progress)
 
         if c3.button("Next"):
-    st.session_state.clear_inputs = True
-    set_next_card(pool, user_stats)
-    st.rerun()
+            st.session_state.clear_inputs = True
+            set_next_card(pool, user_stats)
+            st.rerun()
 
 
     else:
@@ -426,9 +426,9 @@ with right:
             save_progress(progress)
 
         if c3.button("Next"):
-    st.session_state.clear_inputs = True
-    set_next_card(pool, user_stats)
-    st.rerun()
+            st.session_state.clear_inputs = True
+            set_next_card(pool, user_stats)
+            st.rerun()
 
 
 # Feedback
