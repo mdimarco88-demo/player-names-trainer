@@ -294,7 +294,6 @@ def tts_button(text: str, label: str = "🔊 Speak"):
     """
     st.components.v1.html(html, height=50)
 
-@st.cache_data(ttl=60 * 60)
 def fetch_image_bytes(url: str) -> Optional[bytes]:
     """
     Fetch image server-side (Streamlit Cloud) so the browser is not hotlinking the CDN directly.
@@ -313,9 +312,6 @@ def fetch_image_bytes(url: str) -> Optional[bytes]:
     try:
         r = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
         if r.status_code != 200:
-            return None
-        ctype = (r.headers.get("Content-Type") or "").lower()
-        if "image" not in ctype:
             return None
         return r.content
     except Exception:
