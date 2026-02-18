@@ -184,21 +184,22 @@ def wikipedia_thumbnail_url(player_name: str, league: str) -> Optional[str]:
 
 def best_headshot_bytes(card: dict) -> Optional[bytes]:
     """
-    Fallback chain:
-      1) ESPN headshot url -> bytes (if not blocked)
-      2) Wikipedia thumbnail url -> bytes
+    Fallback chain (prioritizes actually-decodable images):
+      1) Wikipedia thumbnail (usually JPG/PNG and reliable)
+      2) ESPN headshot (skip if AVIF/HEIC/HEIF detected)
     """
-    # 1) Try ESPN headshot
-    espn_url = card.get("image_url")
-    if espn_url:
-        img = fetch_image_bytes(espn_url)
+
+    # 1) Wikipedia first (more reliable for decoding/rendering)
+    wiki_url = wikipedia_thumbnail_url(card.get("name", ""), card.get("league", ""))
+    if wiki_url:
+        img = fetch_image_bytes(wiki_url)
         if isinstance(img, (bytes, bytearray)) and len(img) > 200:
             return bytes(img)
 
-    # 2) Try Wikipedia
-    wiki_url = wikipedia_thumbnail_url(card.get("name", ""), card.get("league", ""))
-    if wiki_url:
-        img2 = fetch_image_bytes(wiki_url)
+    # 2) ESPN second
+    espn_url = card.get("image_url")
+    if espn_url:
+        img2 = fetch_image_bytes(espn_url)
         if isinstance(img2, (bytes, bytearray)) and len(img2) > 200:
             return bytes(img2)
 
@@ -298,24 +299,41 @@ def tts_button(text: str, label: str = "🔊 Speak"):
 
 def fetch_image_bytes(url: str) -> Optional[bytes]:
     """
-    Fetch image server-side (Streamlit Cloud) so the browser is not hotlinking the CDN directly.
-    This bypasses many headshot/CDN blocking issues.
+    Fetch image server-side. Returns bytes or None.
+    Adds format-detection so we can skip AVIF/HEIC/HEIF which often fail on Streamlit Cloud.
     """
     if not url:
         return None
 
     headers = {
-        # Some CDNs require a realistic UA and/or referer
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        "User-Agent": "Mozilla/5.0",
         "Referer": "https://www.espn.com/",
-        "Accept": "image/jpeg,image/png,image/webp,*/*;q=0.8",
+        # Strongly prefer formats we can decode
+        "Accept": "image/jpeg,image/png,image/webp;q=0.9,image/*;q=0.8,*/*;q=0.1",
     }
 
     try:
         r = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
         if r.status_code != 200:
             return None
-        return r.content
+
+        data = r.content
+        if not data or len(data) < 200:
+            return None
+
+        # ---------
+        # Detect AVIF / HEIC / HEIF by common ISO BMFF "ftyp" brands in header.
+        # Many CDNs return AVIF even when you ask for jpg/png.
+        # Pillow frequently can't decode AVIF/HEIC on Streamlit Cloud.
+        # ---------
+        head = data[:64]
+        if b"ftypavif" in head or b"ftypavis" in head:
+            return None
+        if b"ftypheic" in head or b"ftypheix" in head or b"ftypheif" in head or b"ftypmif1" in head:
+            return None
+
+        return data
+
     except Exception:
         return None
 
