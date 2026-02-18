@@ -5,6 +5,7 @@ import time
 import io
 import urllib.parse
 import re
+import base64
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -336,15 +337,65 @@ def fetch_image_bytes(url: str) -> Optional[bytes]:
 
     except Exception:
         return None
+def sniff_mime(data: bytes) -> str:
+    """
+    Best-effort mime detection from common file signatures.
+    """
+    if not data or len(data) < 12:
+        return "application/octet-stream"
+
+    head = data[:32]
+
+    # JPEG
+    if head.startswith(b"\xFF\xD8\xFF"):
+        return "image/jpeg"
+
+    # PNG
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+
+    # GIF
+    if head.startswith(b"GIF87a") or head.startswith(b"GIF89a"):
+        return "image/gif"
+
+    # WEBP: "RIFF....WEBP"
+    if head[0:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+
+    # AVIF/HEIF are ISO BMFF containers with ftyp brand
+    # We'll label as image/avif when we see avif brands; otherwise image/heif
+    if b"ftyp" in head:
+        if b"ftypavif" in head or b"ftypavis" in head:
+            return "image/avif"
+        if b"ftypheic" in head or b"ftypheix" in head or b"ftypheif" in head or b"ftypmif1" in head:
+            return "image/heif"
+
+    # SVG (text)
+    if head.lstrip().startswith(b"<svg"):
+        return "image/svg+xml"
+
+    return "application/octet-stream"
+
+
+def render_image_bytes(data: bytes):
+    """
+    Render bytes via browser using a base64 data URI (no server-side decoding).
+    This works even when Pillow can't decode AVIF/WEBP in Streamlit Cloud.
+    """
+    mime = sniff_mime(data)
+    b64 = base64.b64encode(data).decode("utf-8")
+
+    html = f"""
+    <div style="width:100%;">
+      <img src="data:{mime};base64,{b64}" style="width:100%; height:auto; border-radius:10px;" />
+    </div>
+    """
+    st.components.v1.html(html, height=420)
 
 def show_image(card: dict):
-    """
-    Fetch image bytes, decode with Pillow, convert to PNG, then render.
-    This fixes cases where the source returns AVIF/odd formats that Streamlit can't display directly.
-    """
     img = best_headshot_bytes(card)
 
-    # DEBUG (keep for now)
+    # Debug line (keep for now)
     st.caption(f"Image bytes received: {0 if img is None else len(img)}")
 
     if not isinstance(img, (bytes, bytearray)) or len(img) < 200:
@@ -352,19 +403,9 @@ def show_image(card: dict):
         return
 
     try:
-        # Decode whatever format we got
-        im = Image.open(io.BytesIO(bytes(img)))
-        im = im.convert("RGB")  # normalize
-
-        # Convert to PNG in-memory
-        buf = io.BytesIO()
-        im.save(buf, format="PNG")
-        buf.seek(0)
-
-        st.image(buf, use_container_width=True)
-
+        render_image_bytes(bytes(img))
     except Exception:
-        st.caption("Headshot failed to render (decode/convert error).")
+        st.caption("Headshot failed to render (browser embed error).")
 
 
 def init_state():
